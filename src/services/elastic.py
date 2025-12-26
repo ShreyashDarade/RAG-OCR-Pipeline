@@ -10,11 +10,53 @@ from src.core.logger import logger
 
 
 class ElasticClient:
+    """Elasticsearch client supporting local and cloud deployments."""
+    
     def __init__(self) -> None:
-        auth = None
-        if settings.es_username and settings.es_password:
-            auth = (settings.es_username, settings.es_password)
-        self.client = Elasticsearch(settings.es_host, basic_auth=auth)
+        # Option 1: Elasticsearch Cloud with Cloud ID
+        if settings.es_cloud_id:
+            logger.info("Connecting to Elasticsearch Cloud...")
+            if settings.es_api_key:
+                self.client = Elasticsearch(
+                    cloud_id=settings.es_cloud_id,
+                    api_key=settings.es_api_key,
+                )
+            elif settings.es_username and settings.es_password:
+                self.client = Elasticsearch(
+                    cloud_id=settings.es_cloud_id,
+                    basic_auth=(settings.es_username, settings.es_password),
+                )
+            else:
+                raise ValueError("ES_API_KEY or ES_USERNAME/ES_PASSWORD required for cloud")
+        
+        # Option 2: Direct URL with API key (Cloud or self-hosted)
+        elif settings.es_api_key:
+            logger.info(f"Connecting to Elasticsearch at {settings.es_host} with API key...")
+            self.client = Elasticsearch(
+                settings.es_host,
+                api_key=settings.es_api_key,
+            )
+        
+        # Option 3: Direct URL with basic auth
+        elif settings.es_username and settings.es_password:
+            logger.info(f"Connecting to Elasticsearch at {settings.es_host} with credentials...")
+            self.client = Elasticsearch(
+                settings.es_host,
+                basic_auth=(settings.es_username, settings.es_password),
+            )
+        
+        # Option 4: Local without auth
+        else:
+            logger.info(f"Connecting to Elasticsearch at {settings.es_host} (no auth)...")
+            self.client = Elasticsearch(settings.es_host)
+        
+        # Verify connection
+        try:
+            info = self.client.info()
+            logger.info(f"Connected to Elasticsearch {info['version']['number']}")
+        except Exception as e:
+            logger.error(f"Failed to connect to Elasticsearch: {e}")
+            raise
 
     def ensure_index(self, index_name: str, dims: int) -> None:
         if self.client.indices.exists(index=index_name):

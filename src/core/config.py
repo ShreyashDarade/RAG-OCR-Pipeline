@@ -12,10 +12,14 @@ class Settings(BaseSettings):
     environment: str = "local"
     data_dir: Path = Path("data").resolve()
 
-    # ElasticSearch
+    # ElasticSearch Configuration
+    # For local: http://localhost:9200
+    # For Cloud: https://your-deployment.es.region.cloud.es.io:9243
     es_host: str = "http://localhost:9200"
     es_username: str | None = None
     es_password: str | None = None
+    es_api_key: str | None = None  # For Elasticsearch Cloud
+    es_cloud_id: str | None = None  # Elasticsearch Cloud ID
     es_index_text: str = "doc-text"
     es_index_tables: str = "doc-tables"
     es_index_images: str = "doc-images"

@@ -84,15 +84,36 @@ cp .env.example .env
 # OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxx
 ```
 
-### 5. Start Elasticsearch
+### 5. Setup Elasticsearch
+
+**Option A: Elasticsearch Cloud (Recommended for Production)**
+
+1. Sign up at [cloud.elastic.co](https://cloud.elastic.co/)
+2. Create a deployment
+3. Get your **Cloud ID** and **API Key**
+4. Add to `.env`:
+
+```env
+ES_CLOUD_ID=my-deployment:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvJGFiYzEyMyQ...
+ES_API_KEY=your-api-key-here
+```
+
+**Option B: Local Docker (Development)**
 
 ```bash
-# Using Docker (recommended)
 docker run -d --name elasticsearch \
   -p 9200:9200 \
   -e "discovery.type=single-node" \
   -e "xpack.security.enabled=false" \
   docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+```
+
+**Option C: Self-hosted with Authentication**
+
+```env
+ES_HOST=https://your-elasticsearch-server:9200
+ES_USERNAME=elastic
+ES_PASSWORD=your-password
 ```
 
 ### 6. Create Required Directories
@@ -213,10 +234,17 @@ RAG-OCR-Pipeline/
 
 ### Required Environment Variables
 
-| Variable         | Description       | Example                 |
-| ---------------- | ----------------- | ----------------------- |
-| `OPENAI_API_KEY` | OpenAI API key    | `sk-xxxxxxxx`           |
-| `ES_HOST`        | Elasticsearch URL | `http://localhost:9200` |
+| Variable         | Description    | Example       |
+| ---------------- | -------------- | ------------- |
+| `OPENAI_API_KEY` | OpenAI API key | `sk-xxxxxxxx` |
+
+**Elasticsearch (choose one):**
+
+| Variable      | Description            | Example                      |
+| ------------- | ---------------------- | ---------------------------- |
+| `ES_CLOUD_ID` | Elasticsearch Cloud ID | `deployment:base64string...` |
+| `ES_API_KEY`  | Elasticsearch API key  | `your-api-key`               |
+| `ES_HOST`     | Self-hosted ES URL     | `http://localhost:9200`      |
 
 ### Optional Configuration
 
