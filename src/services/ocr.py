@@ -8,10 +8,13 @@ import easyocr
 import numpy as np
 from PIL import Image
 import cv2
+import torch
+import re
 
 from src.core.logger import logger
 from src.utils.image_ops import preprocess_image
 from src.utils.language import detect_language
+from src.utils.nlp_processing import clean_ocr_text
 
 _MODEL_STORAGE = Path(__file__).resolve().parents[2] / "models"
 _MODEL_STORAGE.mkdir(parents=True, exist_ok=True)
@@ -30,10 +33,10 @@ class BaseOCREngine:
 
 
 class EasyEnglishOCREngine(BaseOCREngine):
-    def __init__(self) -> None:
+    def __init__(self, gpu: bool = False) -> None:
         self.reader = easyocr.Reader(
             ["en"],
-            gpu=False,
+            gpu=gpu,
             verbose=False,
             model_storage_directory=str(_MODEL_STORAGE),
         )
@@ -42,15 +45,17 @@ class EasyEnglishOCREngine(BaseOCREngine):
         result = self.reader.readtext(image, detail=1, paragraph=True)
         text = "\n".join(chunk[1] for chunk in result if len(chunk) >= 2)
         confidence = _compute_confidence(result)
-        return OcrResult(text=text, language="en", confidence=confidence)
+        # Apply language-aware NLP cleaning
+        cleaned_text = clean_ocr_text(text, language="en")
+        return OcrResult(text=cleaned_text, language="en", confidence=confidence)
 
 
-class MarathiOCREngine(BaseOCREngine):
-    def __init__(self) -> None:
-        logger.info("Initializing Marathi OCR with EasyOCR pretrained weights")
+class DevanagariOCREngine(BaseOCREngine):
+    def __init__(self, gpu: bool = False) -> None:
+        logger.info("Initializing Devanagari (Marathi/Hindi) OCR with EasyOCR")
         self.reader = easyocr.Reader(
-            ["mr"],
-            gpu=False,
+            ["mr", "hi"],
+            gpu=gpu,
             verbose=False,
             model_storage_directory=str(_MODEL_STORAGE),
         )
@@ -59,7 +64,9 @@ class MarathiOCREngine(BaseOCREngine):
         result = self.reader.readtext(image, detail=1, paragraph=True)
         text = "\n".join(chunk[1] for chunk in result if len(chunk) >= 2)
         confidence = _compute_confidence(result)
-        return OcrResult(text=text, language="mr", confidence=confidence)
+        # Apply language-aware NLP cleaning for Devanagari
+        cleaned_text = clean_ocr_text(text, language="mr")
+        return OcrResult(text=cleaned_text, language="mr", confidence=confidence)
 
 
 def _compute_confidence(chunks: Sequence) -> float:
@@ -95,10 +102,13 @@ def _to_bgr_array(image: Image.Image | np.ndarray) -> np.ndarray:
 
 class OCRService:
     def __init__(self) -> None:
-        self.eng_engine = EasyEnglishOCREngine()
-        self.mr_engine = MarathiOCREngine()
+        gpu = torch.cuda.is_available()
+        logger.info(f"OCR Service GPU Available: {gpu}")
+        self.eng_engine = EasyEnglishOCREngine(gpu=gpu)
+        self.dev_engine = DevanagariOCREngine(gpu=gpu)
         self.eng_code = "en"
         self.mr_code = "mr"
+        self.hi_code = "hi"
 
     def _best_result(self, engine: BaseOCREngine, candidates: Sequence[np.ndarray]) -> OcrResult:
         best: OcrResult | None = None
@@ -111,46 +121,43 @@ class OCRService:
     def read(self, image: Image.Image | np.ndarray, language_hint: str | None = None) -> OcrResult:
 
         base = _to_bgr_array(image)
+        # Preprocess now includes deskewing via image_ops
         processed = preprocess_image(base.copy())
         candidates = [base, processed]
 
-        if language_hint == self.mr_code:
-            chosen = self._best_result(self.mr_engine, candidates)
-            return OcrResult(text=chosen.text, language=self.mr_code, confidence=chosen.confidence)
+        if language_hint in [self.mr_code, self.hi_code]:
+            chosen = self._best_result(self.dev_engine, candidates)
+            chosen.language = language_hint 
+            return chosen
         if language_hint == self.eng_code:
             chosen = self._best_result(self.eng_engine, candidates)
-            return OcrResult(text=chosen.text, language=self.eng_code, confidence=chosen.confidence)
+            return chosen
 
-        marathi = self._best_result(self.mr_engine, candidates)
+        devanagari = self._best_result(self.dev_engine, candidates)
         english = self._best_result(self.eng_engine, candidates)
 
-        marathi_script_ratio = _devanagari_ratio(marathi.text)
-        english_latin_ratio = _latin_ratio(english.text)
-        marathi_latin_ratio = _latin_ratio(marathi.text)
+        # Devanagari ratio check
+        dev_ratio = _devanagari_ratio(devanagari.text)
+        eng_ratio = _latin_ratio(english.text)
+        
+        # Simple heuristic: if significant Devanagari, prefer it
+        if dev_ratio > 0.1 and dev_ratio > eng_ratio:
+            # Try to distinguish Hindi vs Marathi if needed, 
+            # for now assume Marathi as per original or detect
+            lang_guess = detect_language(devanagari.text)
+            devanagari.language = lang_guess if lang_guess in [self.mr_code, self.hi_code] else self.mr_code
+            return devanagari
 
-        marathi_lang_guess = detect_language(marathi.text)
-        english_lang_guess = detect_language(english.text)
-
-        if marathi_lang_guess == self.mr_code and marathi.confidence >= english.confidence - 0.05:
-            return marathi
-        if english_lang_guess == self.eng_code and english.confidence >= marathi.confidence - 0.05:
+        if eng_ratio > dev_ratio:
             return english
 
-        if marathi_script_ratio >= 0.35 and english_latin_ratio < 0.45 and marathi.confidence >= english.confidence - 0.1:
-            return marathi
-
-        if english_latin_ratio >= 0.55 and english.confidence >= marathi.confidence - 0.15:
-            return english
-
-        if marathi.confidence >= english.confidence + 0.1 and marathi_script_ratio >= 0.25:
-            return marathi
-        if english.confidence >= marathi.confidence + 0.1 and english_latin_ratio >= 0.35:
-            return english
-
-        if marathi_script_ratio - marathi_latin_ratio >= 0.2 and marathi.confidence >= english.confidence:
-            return marathi
-
-        return english if english.confidence >= marathi.confidence else marathi
+        # Fallback to confidence
+        if devanagari.confidence > english.confidence:
+            lang_guess = detect_language(devanagari.text)
+            devanagari.language = lang_guess if lang_guess in [self.mr_code, self.hi_code] else self.mr_code
+            return devanagari
+            
+        return english
 
 
 __all__ = ["OCRService", "OcrResult"]

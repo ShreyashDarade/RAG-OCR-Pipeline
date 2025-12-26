@@ -6,6 +6,7 @@ from typing import Tuple
 import cv2
 import numpy as np
 from PIL import Image
+from scipy import ndimage
 
 
 def load_image(path: Path) -> np.ndarray:
@@ -47,7 +48,7 @@ def preprocess_image(image: np.ndarray, max_length: int = 1280) -> np.ndarray:
     # 3. Denoise while preserving edges.
     working = cv2.fastNlMeansDenoisingColored(working, None, h=10, hColor=10, templateWindowSize=7, searchWindowSize=21)
 
-    # 4. CLAHE in LAB color space for local contrast enhancement.
+    # 4. CLAHE in LAB color space
     lab = cv2.cvtColor(working, cv2.COLOR_BGR2LAB)
     l, a, b = cv2.split(lab)
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
@@ -55,7 +56,35 @@ def preprocess_image(image: np.ndarray, max_length: int = 1280) -> np.ndarray:
     lab = cv2.merge((l, a, b))
     enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
+    # 5. Deskew
+    enhanced = deskew_image(enhanced)
+
     return enhanced
+
+
+def deskew_image(image: np.ndarray) -> np.ndarray:
+    """Deskew the image using projection profile or contour angle."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.bitwise_not(gray)
+    coords = np.column_stack(np.where(gray > 0))
+    
+    if coords.size == 0:
+        return image
+        
+    angle = cv2.minAreaRect(coords)[-1]
+    
+    # Correct the angle
+    if angle < -45:
+        angle = -(90 + angle)
+    else:
+        angle = -angle
+        
+    # Rotate using scipy for high quality interpolation
+    if abs(angle) > 0.5: # Only rotate if skew is significant
+        # order=3 is bicubic interpolation
+        rotated = ndimage.rotate(image, angle, reshape=True, order=3, mode='constant', cval=255)
+        return rotated
+    return image
 
 
 def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
@@ -82,4 +111,5 @@ __all__ = [
     "image_statistics",
     "to_pil",
     "save_temp",
+    "deskew_image",
 ]

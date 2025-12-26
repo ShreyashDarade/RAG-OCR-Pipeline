@@ -1,0 +1,159 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# =========================
+# Virtual Environments
+# =========================
+venv/
+ENV/
+env/
+.venv/
+.env.local
+.env.*.local
+
+# =========================
+# Environment Variables
+# =========================
+.env
+.env.production
+.env.staging
+*.env
+
+# =========================
+# IDE / Editors
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# =========================
+# OS Generated
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =========================
+# Project Specific
+# =========================
+# Data directory (user uploads)
+data/
+!data/.gitkeep
+
+# Model weights (downloaded at runtime)
+models/
+!models/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# Output files
+out.txt
+output/
+results/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# =========================
+# Testing
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# =========================
+# Jupyter Notebooks
+# =========================
+.ipynb_checkpoints/
+*.ipynb
+
+# =========================
+# Docker
+# =========================
+.docker/
+
+# =========================
+# Elasticsearch
+# =========================
+elasticsearch-data/
+
+# =========================
+# Redis
+# =========================
+dump.rdb
+
+# =========================
+# Large Files
+# =========================
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.gif
+*.bmp
+!docs/*.png
+!docs/*.jpg
+
+# =========================
+# Compiled/Optimized
+# =========================
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.manifest
+*.spec
+
+# =========================
+# Distribution
+# =========================
+MANIFEST
+*.tar.gz
+*.zip
+*.rar

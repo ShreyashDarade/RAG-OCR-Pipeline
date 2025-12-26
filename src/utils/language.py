@@ -7,7 +7,7 @@ from langdetect import DetectorFactory, detect, detect_langs
 
 DetectorFactory.seed = 42
 
-SUPPORTED_LANGS = {"en": "english", "mr": "marathi"}
+SUPPORTED_LANGS = {"en": "english", "mr": "marathi", "hi": "hindi"}
 
 
 @lru_cache(maxsize=1)
