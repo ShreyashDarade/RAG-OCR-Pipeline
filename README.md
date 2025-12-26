@@ -84,36 +84,17 @@ cp .env.example .env
 # OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxx
 ```
 
-### 5. Setup Elasticsearch
+### 5. Setup Elasticsearch Cloud (Required)
 
-**Option A: Elasticsearch Cloud (Recommended for Production)**
-
-1. Sign up at [cloud.elastic.co](https://cloud.elastic.co/)
-2. Create a deployment
-3. Get your **Cloud ID** and **API Key**
-4. Add to `.env`:
+1. Sign up at [cloud.elastic.co](https://cloud.elastic.co/) (14-day free trial)
+2. Create a new deployment (select your region)
+3. Get your **Cloud ID**: Deployment → Manage → Cloud ID
+4. Create an **API Key**: Deployment → Security → API Keys → Create
+5. Add to `.env`:
 
 ```env
 ES_CLOUD_ID=my-deployment:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvJGFiYzEyMyQ...
 ES_API_KEY=your-api-key-here
-```
-
-**Option B: Local Docker (Development)**
-
-```bash
-docker run -d --name elasticsearch \
-  -p 9200:9200 \
-  -e "discovery.type=single-node" \
-  -e "xpack.security.enabled=false" \
-  docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-```
-
-**Option C: Self-hosted with Authentication**
-
-```env
-ES_HOST=https://your-elasticsearch-server:9200
-ES_USERNAME=elastic
-ES_PASSWORD=your-password
 ```
 
 ### 6. Create Required Directories
@@ -181,6 +162,19 @@ curl -X POST "http://localhost:8000/api/v1/retrieve" \
 curl -X POST "http://localhost:8000/api/v1/ask" \
   -H "Content-Type: application/json" \
   -d '{"query": "What is the document about?"}'
+```
+
+### Get System Status
+
+```bash
+curl http://localhost:8000/api/v1/status
+```
+
+### Delete Documents
+
+```bash
+# Delete all chunks from a specific source file
+curl -X DELETE "http://localhost:8000/api/v1/documents?source=/path/to/file.pdf"
 ```
 
 ---

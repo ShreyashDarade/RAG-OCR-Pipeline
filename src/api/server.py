@@ -243,6 +243,54 @@ async def ask_question(request: Request, payload: AskRequest):
     )
 
 
+@app.get("/api/v1/status")
+async def get_status():
+    """Get system status and configuration info."""
+    return {
+        "app_name": settings.app_name,
+        "environment": settings.environment,
+        "version": "1.0.0",
+        "elasticsearch": {
+            "cloud": bool(settings.es_cloud_id),
+            "indexes": [settings.es_index_text, settings.es_index_tables, settings.es_index_images],
+        },
+        "openai": {
+            "model": settings.openai_model,
+            "embedding_model": settings.openai_embedding_model,
+        },
+        "ocr": {
+            "gpu_enabled": settings.ocr_gpu_enabled,
+            "supported_languages": settings.supported_ocr_languages,
+        },
+        "retrieval": {
+            "top_k": settings.retriever_top_k,
+            "rerank_enabled": settings.rerank_enabled,
+            "rerank_top_k": settings.rerank_top_k,
+            "cross_references": settings.enable_cross_references,
+        },
+        "rate_limit": f"{settings.rate_limit_per_minute}/minute",
+    }
+
+
+@app.delete("/api/v1/documents")
+@limiter.limit(f"{settings.rate_limit_per_minute}/minute")
+async def delete_documents(request: Request, source: str):
+    """Delete all documents from a specific source file."""
+    if _ingestion is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    
+    try:
+        deleted = _ingestion.indexer.delete_source(source)
+        return {
+            "success": True,
+            "source": source,
+            "deleted_count": deleted,
+        }
+    except Exception as e:
+        logger.error(f"Delete failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+
+
 # === ERROR HANDLERS ===
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -254,4 +302,5 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 __all__ = ["app"]
+
 

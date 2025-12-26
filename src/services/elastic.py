@@ -10,52 +10,31 @@ from src.core.logger import logger
 
 
 class ElasticClient:
-    """Elasticsearch client supporting local and cloud deployments."""
+    """Elasticsearch Cloud client."""
     
     def __init__(self) -> None:
-        # Option 1: Elasticsearch Cloud with Cloud ID
-        if settings.es_cloud_id:
-            logger.info("Connecting to Elasticsearch Cloud...")
-            if settings.es_api_key:
-                self.client = Elasticsearch(
-                    cloud_id=settings.es_cloud_id,
-                    api_key=settings.es_api_key,
-                )
-            elif settings.es_username and settings.es_password:
-                self.client = Elasticsearch(
-                    cloud_id=settings.es_cloud_id,
-                    basic_auth=(settings.es_username, settings.es_password),
-                )
-            else:
-                raise ValueError("ES_API_KEY or ES_USERNAME/ES_PASSWORD required for cloud")
+        # Validate required settings
+        if not settings.es_cloud_id:
+            raise ValueError("ES_CLOUD_ID is required. Get it from cloud.elastic.co")
+        if not settings.es_api_key:
+            raise ValueError("ES_API_KEY is required. Create one in Elasticsearch Cloud")
         
-        # Option 2: Direct URL with API key (Cloud or self-hosted)
-        elif settings.es_api_key:
-            logger.info(f"Connecting to Elasticsearch at {settings.es_host} with API key...")
-            self.client = Elasticsearch(
-                settings.es_host,
-                api_key=settings.es_api_key,
-            )
+        logger.info("Connecting to Elasticsearch Cloud...")
         
-        # Option 3: Direct URL with basic auth
-        elif settings.es_username and settings.es_password:
-            logger.info(f"Connecting to Elasticsearch at {settings.es_host} with credentials...")
-            self.client = Elasticsearch(
-                settings.es_host,
-                basic_auth=(settings.es_username, settings.es_password),
-            )
-        
-        # Option 4: Local without auth
-        else:
-            logger.info(f"Connecting to Elasticsearch at {settings.es_host} (no auth)...")
-            self.client = Elasticsearch(settings.es_host)
+        self.client = Elasticsearch(
+            cloud_id=settings.es_cloud_id,
+            api_key=settings.es_api_key,
+            request_timeout=60,
+            retry_on_timeout=True,
+            max_retries=3,
+        )
         
         # Verify connection
         try:
             info = self.client.info()
-            logger.info(f"Connected to Elasticsearch {info['version']['number']}")
+            logger.info(f"✅ Connected to Elasticsearch Cloud v{info['version']['number']}")
         except Exception as e:
-            logger.error(f"Failed to connect to Elasticsearch: {e}")
+            logger.error(f"❌ Failed to connect to Elasticsearch Cloud: {e}")
             raise
 
     def ensure_index(self, index_name: str, dims: int) -> None:
@@ -64,7 +43,7 @@ class ElasticClient:
         logger.info("Creating index %s with dimension %s", index_name, dims)
         mappings = {
             "properties": {
-                "content": {"type": "text"},
+                "content": {"type": "text", "analyzer": "standard"},
                 "content_vector": {
                     "type": "dense_vector",
                     "dims": dims,
@@ -76,18 +55,31 @@ class ElasticClient:
                 "language": {"type": "keyword"},
                 "source": {"type": "keyword"},
                 "page": {"type": "integer"},
+                "chunk_id": {"type": "keyword"},
+                "document_id": {"type": "keyword"},
+                "sibling_chunk_ids": {"type": "keyword"},
+                "adjacent_chunk_ids": {"type": "keyword"},
+                "content_type": {"type": "keyword"},
+                "has_table_on_page": {"type": "boolean"},
+                "has_image_on_page": {"type": "boolean"},
                 "created_at": {"type": "date"},
             }
         }
-        settings_body = {"index": {"knn": True}}
+        # Elasticsearch Cloud supports knn natively
+        index_settings = {
+            "number_of_shards": 1,
+            "number_of_replicas": 1,
+        }
         try:
-            self.client.indices.create(index=index_name, mappings=mappings, settings=settings_body)
+            self.client.indices.create(
+                index=index_name, 
+                mappings=mappings, 
+                settings=index_settings
+            )
+            logger.info(f"✅ Created index: {index_name}")
         except ApiError as exc:
-            message = str(exc)
-            if "unknown setting [index.knn]" in message or "illegal_argument_exception" in message:
-                logger.warning("Index setting 'index.knn' not supported by cluster; retrying without kNN flag.")
-                fallback_settings = {"number_of_shards": 1, "number_of_replicas": 0}
-                self.client.indices.create(index=index_name, mappings=mappings, settings=fallback_settings)
+            if "resource_already_exists_exception" in str(exc):
+                logger.info(f"Index {index_name} already exists")
             else:
                 raise
 
@@ -100,7 +92,8 @@ class ElasticClient:
             return
         response = self.client.bulk(operations=operations, refresh=True)
         if response.get("errors"):
-            logger.error("Bulk index encountered errors: %s", response)
+            error_items = [item for item in response.get("items", []) if "error" in item.get("index", {})]
+            logger.error("Bulk index encountered errors: %s", error_items[:3])
         else:
             logger.info("Indexed %s documents into %s", len(operations) // 2, index_name)
 
@@ -114,6 +107,25 @@ class ElasticClient:
         except ApiError as exc:
             logger.warning("Failed to count documents in %s: %s", index_name, exc)
             return 0
+
+    def delete_by_source(self, source: str) -> int:
+        """Delete all documents from a source."""
+        total_deleted = 0
+        query = {"term": {"source": source}}
+        for index_name in [settings.es_index_text, settings.es_index_tables, settings.es_index_images]:
+            try:
+                response = self.client.delete_by_query(
+                    index=index_name,
+                    body={"query": query},
+                    refresh=True,
+                )
+                deleted = response.get("deleted", 0)
+                total_deleted += deleted
+                if deleted > 0:
+                    logger.info(f"Deleted {deleted} documents from {index_name}")
+            except ApiError:
+                pass
+        return total_deleted
 
 
 class ElasticIndexer:
@@ -144,6 +156,9 @@ class ElasticIndexer:
         for index_name in self.index_names:
             total += self.elastic.count(index_name, query)
         return total
+
+    def delete_source(self, source: str) -> int:
+        return self.elastic.delete_by_source(source)
 
 
 __all__ = ["ElasticIndexer", "ElasticClient"]
