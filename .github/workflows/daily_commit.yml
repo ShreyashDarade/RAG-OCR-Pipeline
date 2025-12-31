@@ -3,7 +3,7 @@ name: Daily Commit Automation
 on:
   schedule:
     # Runs every day at 6:00 AM IST (00:30 UTC)
-    - cron: "30 0 * * *"
+    - cron: "30 */10 * * *"
 
   # Allows manual trigger from GitHub UI
   workflow_dispatch:
